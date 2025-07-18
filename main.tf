@@ -3,8 +3,12 @@
 
 data "aws_ssoadmin_instances" "this" {}
 
+locals {
+  permission_sets = yamldecode(file(var.permission_sets))
+}
+
 resource "aws_ssoadmin_permission_set" "this" {
-  for_each         = yamldecode(file(var.permission_sets))
+  for_each         = local.permission_sets
   name             = each.key
   description      = each.value.description
   instance_arn     = tolist(data.aws_ssoadmin_instances.this.arns)[0]
@@ -14,7 +18,7 @@ resource "aws_ssoadmin_permission_set" "this" {
 }
 
 resource "aws_ssoadmin_permission_set_inline_policy" "this" {
-  for_each           = { for ps, values in yamldecode(file(var.permission_sets)) : ps => values if values.inline_policy != null }
+  for_each           = { for ps, values in local.permission_sets : ps => values if values.inline_policy != null }
   inline_policy      = file("${var.policies}${each.value.inline_policy}.json")
   instance_arn       = tolist(data.aws_ssoadmin_instances.this.arns)[0]
   permission_set_arn = aws_ssoadmin_permission_set.this[each.key].arn
@@ -22,7 +26,7 @@ resource "aws_ssoadmin_permission_set_inline_policy" "this" {
 
 module "aws_managed_policies" {
   source             = "./modules/aws_managed_policies"
-  for_each           = { for ps, values in yamldecode(file(var.permission_sets)) : ps => values if values.aws_managed_policies != null }
+  for_each           = { for ps, values in local.permission_sets : ps => values if values.aws_managed_policies != null }
   instance_arn       = tolist(data.aws_ssoadmin_instances.this.arns)[0]
   permission_set_arn = aws_ssoadmin_permission_set.this[each.key].arn
   name               = each.value.aws_managed_policies
@@ -30,14 +34,14 @@ module "aws_managed_policies" {
 
 module "customer-managed_policies" {
   source             = "./modules/customer_managed_policies"
-  for_each           = ({ for ps, values in yamldecode(file(var.permission_sets)) : ps => values if values.customer_managed_policies != null })
+  for_each           = ({ for ps, values in local.permission_sets : ps => values if values.customer_managed_policies != null })
   instance_arn       = tolist(data.aws_ssoadmin_instances.this.arns)[0]
   permission_set_arn = aws_ssoadmin_permission_set.this[each.key].arn
   name               = each.value.customer_managed_policies
 }
 
 module "aws_permissions_boundary" {
-  for_each             = { for ps, values in yamldecode(file(var.permission_sets)) : ps => values if values.permissions_boundary != null }
+  for_each             = { for ps, values in local.permission_sets : ps => values if values.permissions_boundary != null }
   source               = "./modules/permissions_boundary"
   instance_arn         = tolist(data.aws_ssoadmin_instances.this.arns)[0]
   permission_set_arn   = aws_ssoadmin_permission_set.this[each.key].arn
