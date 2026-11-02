@@ -49,9 +49,13 @@ module "aws_permissions_boundary" {
 }
 
 module "account_assignment" {
-  depends_on = [
-    aws_ssoadmin_permission_set.this
-  ]
+  # NOTE: intentionally NO module-level depends_on here. A blanket
+  # depends_on = [aws_ssoadmin_permission_set.this] forces every data source
+  # in this module to re-read during apply whenever ANY permission set
+  # changes, which turns permission_set_arn/principal_id into
+  # (known after apply) and force-replaces every account assignment. Instead
+  # we pass the created permission-set ARNs directly (see permission_set_arns)
+  # so ordering is captured by a real reference edge, per-assignment.
   source             = "./modules/assignments"
   for_each           = yamldecode(file(var.account_assignments))
   principal          = each.value.principal
@@ -60,4 +64,10 @@ module "account_assignment" {
   account_assignment = each.value.account_list
   instances_arns     = tolist(data.aws_ssoadmin_instances.this.arns)[0]
   identity_store_id  = tolist(data.aws_ssoadmin_instances.this.identity_store_ids)[0]
+
+  # Module-managed permission-set ARNs. Assignments referencing a name in this
+  # map use the resource ARN (known at plan for existing sets → no spurious
+  # replacement); names absent here (externally managed) fall back to a
+  # data-source lookup inside the submodule.
+  permission_set_arns = { for name, ps in aws_ssoadmin_permission_set.this : name => ps.arn }
 }
